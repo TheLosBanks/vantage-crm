@@ -1,7 +1,25 @@
 import { Pool } from "pg";
 
-// Works with either Vercel Postgres (POSTGRES_URL) or any DATABASE_URL (Neon etc.)
-const CONN = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
+// Find the Postgres connection string regardless of how Vercel/Neon named it.
+// The Neon integration injects vars under a configurable prefix (e.g. STORAGE_,
+// POSTGRES_, DATABASE_), so check the well-known names first, then any env var
+// ending in DATABASE_URL / POSTGRES_URL / _URL that looks like a postgres DSN.
+function findConn(): string {
+  const direct = [
+    process.env.DATABASE_URL, process.env.POSTGRES_URL,
+    process.env.STORAGE_URL, process.env.STORAGE_DATABASE_URL,
+    process.env.STORAGE_POSTGRES_URL, process.env.POSTGRES_PRISMA_URL,
+    process.env.DATABASE_URL_UNPOOLED, process.env.POSTGRES_URL_NON_POOLING,
+  ].find(Boolean);
+  if (direct) return direct;
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v && /^postgres(ql)?:\/\//.test(v) && /(DATABASE_URL|POSTGRES_URL|_URL)$/.test(k)) {
+      return v;
+    }
+  }
+  return "";
+}
+const CONN = findConn();
 
 let pool: Pool | null = null;
 
