@@ -116,6 +116,22 @@ export async function updateLead(id: number, fields: Partial<Pick<Lead, "status"
   await p.query(`UPDATE leads SET ${sets.join(", ")}, updated_at = now() WHERE id = $${vals.length}`, vals);
 }
 
+// Mark a lead's status by email (used by the drafter: email → "Drafted").
+// Never downgrades a lead that's already past the target stage.
+const STAGE_ORDER = ["New", "Drafted", "Sent", "Replied", "Booked", "Closed"];
+export async function markStatusByEmail(email: string, status: string): Promise<void> {
+  const p = getPool();
+  if (!p || !email) return;
+  await ensureSchema();
+  const target = STAGE_ORDER.indexOf(status);
+  await p.query(
+    `UPDATE leads SET status=$1, updated_at=now()
+     WHERE lower(email)=lower($2)
+       AND COALESCE(array_position($3::text[], status), 0) < $4`,
+    [status, email, STAGE_ORDER, target < 0 ? 99 : target + 1]
+  );
+}
+
 // Upsert from the lead pipeline (scraper/drafter). Status set only on insert.
 export async function upsertLead(l: Omit<Lead, "id" | "status" | "notes"> & { status?: string }): Promise<void> {
   const p = getPool();
