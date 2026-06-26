@@ -45,6 +45,7 @@ export type Lead = {
   website: string;
   status: string;
   notes: string;
+  script: string;
 };
 
 let schemaReady = false;
@@ -63,12 +64,52 @@ export async function ensureSchema(): Promise<void> {
       website TEXT DEFAULT '',
       status TEXT DEFAULT 'New',
       notes TEXT DEFAULT '',
+      script TEXT DEFAULT '',
       created_at TIMESTAMPTZ DEFAULT now(),
       updated_at TIMESTAMPTZ DEFAULT now(),
       UNIQUE (name, email)
     );
   `);
+  // Migration for tables created before the script column existed.
+  await p.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS script TEXT DEFAULT ''`);
+  // Site events (call taps, quote submits, etc.) from the client sites.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS site_events (
+      id SERIAL PRIMARY KEY,
+      source TEXT NOT NULL,
+      type TEXT NOT NULL,
+      ts TIMESTAMPTZ DEFAULT now()
+    );
+  `);
   schemaReady = true;
+}
+
+export async function recordEvent(source: string, type: string): Promise<void> {
+  const p = getPool();
+  if (!p) return;
+  await ensureSchema();
+  await p.query("INSERT INTO site_events (source, type) VALUES ($1, $2)", [source.slice(0, 80), type.slice(0, 80)]);
+}
+
+export async function clearEvents(source: string): Promise<number> {
+  const p = getPool();
+  if (!p) return 0;
+  await ensureSchema();
+  const { rowCount } = await p.query("DELETE FROM site_events WHERE source = $1", [source]);
+  return rowCount ?? 0;
+}
+
+export async function eventReport(source: string, days: number): Promise<{ type: string; n: number }[]> {
+  const p = getPool();
+  if (!p) return [];
+  await ensureSchema();
+  const { rows } = await p.query(
+    `SELECT type, COUNT(*)::int AS n FROM site_events
+     WHERE source = $1 AND ts >= now() - ($2 || ' days')::interval
+     GROUP BY type ORDER BY n DESC`,
+    [source, String(days)]
+  );
+  return rows as { type: string; n: number }[];
 }
 
 async function seedIfEmpty(): Promise<void> {
@@ -88,7 +129,7 @@ export async function listLeads(): Promise<Lead[]> {
   await ensureSchema();
   await seedIfEmpty();
   const r = await p.query(
-    `SELECT id,name,category,phone,email,instagram,linkedin,website,status,notes
+    `SELECT id,name,category,phone,email,instagram,linkedin,website,status,notes,script
      FROM leads ORDER BY
        CASE status WHEN 'Booked' THEN 0 WHEN 'Replied' THEN 1 WHEN 'Sent' THEN 2
                    WHEN 'Drafted' THEN 3 WHEN 'New' THEN 4 ELSE 5 END,
@@ -97,7 +138,7 @@ export async function listLeads(): Promise<Lead[]> {
   return r.rows as Lead[];
 }
 
-export async function updateLead(id: number, fields: Partial<Pick<Lead, "status" | "notes">>): Promise<void> {
+export async function updateLead(id: number, fields: Partial<Pick<Lead, "status" | "notes" | "script">>): Promise<void> {
   const p = getPool();
   if (!p) return;
   await ensureSchema();
@@ -110,6 +151,10 @@ export async function updateLead(id: number, fields: Partial<Pick<Lead, "status"
   if (typeof fields.notes === "string") {
     vals.push(fields.notes);
     sets.push(`notes = $${vals.length}`);
+  }
+  if (typeof fields.script === "string") {
+    vals.push(fields.script);
+    sets.push(`script = $${vals.length}`);
   }
   if (!sets.length) return;
   vals.push(id);
@@ -133,16 +178,21 @@ export async function markStatusByEmail(email: string, status: string): Promise<
 }
 
 // Upsert from the lead pipeline (scraper/drafter). Status set only on insert.
-export async function upsertLead(l: Omit<Lead, "id" | "status" | "notes"> & { status?: string }): Promise<void> {
+export async function upsertLead(
+  l: Omit<Lead, "id" | "status" | "notes" | "script"> & { status?: string; script?: string }
+): Promise<void> {
   const p = getPool();
   if (!p) return;
   await ensureSchema();
   await p.query(
-    `INSERT INTO leads (name,category,phone,email,instagram,linkedin,website,status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    `INSERT INTO leads (name,category,phone,email,instagram,linkedin,website,status,script)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (name,email) DO UPDATE SET
        phone=EXCLUDED.phone, instagram=EXCLUDED.instagram,
-       linkedin=EXCLUDED.linkedin, website=EXCLUDED.website, updated_at=now()`,
-    [l.name, l.category, l.phone, l.email, l.instagram, l.linkedin, l.website, l.status || "New"]
+       linkedin=EXCLUDED.linkedin, website=EXCLUDED.website,
+       category=CASE WHEN EXCLUDED.category <> '' THEN EXCLUDED.category ELSE leads.category END,
+       script=CASE WHEN EXCLUDED.script <> '' THEN EXCLUDED.script ELSE leads.script END,
+       updated_at=now()`,
+    [l.name, l.category, l.phone, l.email, l.instagram, l.linkedin, l.website, l.status || "New", l.script || ""]
   );
 }

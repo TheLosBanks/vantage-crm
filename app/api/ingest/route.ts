@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   if (!getPool()) return NextResponse.json({ error: "no database" }, { status: 503 });
 
   let body: {
-    leads?: Array<{ name: string; category?: string; phone?: string; email?: string; instagram?: string; linkedin?: string; website?: string }>;
+    leads?: Array<{ name: string; category?: string; phone?: string; email?: string; instagram?: string; linkedin?: string; website?: string; script?: string }>;
     mark?: Array<{ email: string; status: string }>;
   };
   try {
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     await upsertLead({
       name: l.name, category: l.category || "", phone: l.phone || "",
       email: l.email || "", instagram: l.instagram || "", linkedin: l.linkedin || "",
-      website: l.website || "",
+      website: l.website || "", script: l.script || "",
     });
     upserted++;
   }

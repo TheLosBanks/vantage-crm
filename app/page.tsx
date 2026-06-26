@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 const STATUSES = ["New", "Drafted", "Sent", "Replied", "Booked", "Closed"];
 const STATUS_COLOR: Record<string, string> = {
@@ -14,8 +14,10 @@ const STATUS_COLOR: Record<string, string> = {
 
 type Lead = {
   id: number; name: string; category: string; phone: string; email: string;
-  instagram: string; linkedin: string; website: string; status: string; notes: string;
+  instagram: string; linkedin: string; website: string; status: string; notes: string; script: string;
 };
+
+const EMPTY_ADD = { name: "", category: "", phone: "", website: "", script: "" };
 
 export default function Home() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -25,6 +27,40 @@ export default function Home() {
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState(EMPTY_ADD);
+  const [adding, setAdding] = useState(false);
+
+  function toggleExpand(id: number) {
+    setExpanded((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function copyScript(id: number, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
+    } catch {
+      /* clipboard blocked; ignore */
+    }
+  }
+
+  async function addLead(e: React.FormEvent) {
+    e.preventDefault();
+    if (!addForm.name.trim() || adding) return;
+    setAdding(true);
+    const r = await fetch("/api/leads", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(addForm),
+    });
+    setAdding(false);
+    if (r.ok) { setAddForm(EMPTY_ADD); setShowAdd(false); load(); }
+  }
 
   async function load() {
     const r = await fetch("/api/leads");
@@ -59,7 +95,7 @@ export default function Home() {
     const term = q.trim().toLowerCase();
     return leads.filter((l) =>
       (statusFilter === "All" || l.status === statusFilter) &&
-      (!term || [l.name, l.category, l.email, l.phone].some((v) => (v || "").toLowerCase().includes(term)))
+      (!term || [l.name, l.category, l.email, l.phone, l.script].some((v) => (v || "").toLowerCase().includes(term)))
     );
   }, [leads, q, statusFilter]);
 
@@ -103,12 +139,39 @@ export default function Home() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email, phone…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email, phone, script…"
           className="w-full max-w-xs rounded-lg border border-vw-line bg-vw-panel px-3.5 py-2.5 text-sm text-vw-text outline-none placeholder:text-vw-muted focus:border-vw-accent" />
         {statusFilter !== "All" && (
           <button onClick={() => setStatusFilter("All")} className="text-sm font-semibold text-vw-accent hover:underline">Clear filter</button>
         )}
+        <button onClick={() => setShowAdd((s) => !s)}
+          className="ml-auto rounded-lg bg-vw-accent px-3.5 py-2.5 text-sm font-bold text-white transition hover:opacity-90">
+          {showAdd ? "Close" : "+ Add lead"}
+        </button>
       </div>
+
+      {showAdd && (
+        <form onSubmit={addLead} className="mt-3 grid gap-3 rounded-xl border border-vw-line bg-vw-panel p-4 sm:grid-cols-2">
+          <input value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="Business name *"
+            className="rounded-lg border border-vw-line bg-vw-bg px-3 py-2.5 text-sm text-vw-text outline-none placeholder:text-vw-muted focus:border-vw-accent" />
+          <input value={addForm.category} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })} placeholder="Category (e.g. restaurant)"
+            className="rounded-lg border border-vw-line bg-vw-bg px-3 py-2.5 text-sm text-vw-text outline-none placeholder:text-vw-muted focus:border-vw-accent" />
+          <input value={addForm.phone} onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })} placeholder="Phone"
+            className="rounded-lg border border-vw-line bg-vw-bg px-3 py-2.5 text-sm text-vw-text outline-none placeholder:text-vw-muted focus:border-vw-accent" />
+          <input value={addForm.website} onChange={(e) => setAddForm({ ...addForm, website: e.target.value })} placeholder="Website (if any)"
+            className="rounded-lg border border-vw-line bg-vw-bg px-3 py-2.5 text-sm text-vw-text outline-none placeholder:text-vw-muted focus:border-vw-accent" />
+          <textarea value={addForm.script} onChange={(e) => setAddForm({ ...addForm, script: e.target.value })} placeholder="Call / walk-in script" rows={4}
+            className="resize-y rounded-lg border border-vw-line bg-vw-bg px-3 py-2.5 text-sm text-vw-text outline-none placeholder:text-vw-muted focus:border-vw-accent sm:col-span-2" />
+          <div className="flex gap-2 sm:col-span-2">
+            <button type="submit" disabled={!addForm.name.trim() || adding}
+              className="rounded-lg bg-vw-accent px-4 py-2.5 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-40">
+              {adding ? "Adding…" : "Add lead"}
+            </button>
+            <button type="button" onClick={() => { setShowAdd(false); setAddForm(EMPTY_ADD); }}
+              className="rounded-lg border border-vw-line px-4 py-2.5 text-sm font-semibold text-vw-muted transition hover:text-vw-text">Cancel</button>
+          </div>
+        </form>
+      )}
 
       {!dbReady && (
         <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-sm text-amber-300">
@@ -124,12 +187,14 @@ export default function Home() {
               <th className="px-4 py-3">Contact</th>
               <th className="px-4 py-3">Socials</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Script</th>
               <th className="px-4 py-3 min-w-[200px]">Notes</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-vw-line">
             {filtered.map((l) => (
-              <tr key={l.id} className="align-top transition hover:bg-white/[0.03]">
+              <Fragment key={l.id}>
+              <tr className="align-top transition hover:bg-white/[0.03]">
                 <td className="px-4 py-3">
                   <div className="font-semibold text-vw-text">{l.name}</div>
                   <div className="text-xs text-vw-muted">{l.category}</div>
@@ -137,7 +202,7 @@ export default function Home() {
                 </td>
                 <td className="px-4 py-3 text-vw-text/80">
                   {l.email && <div><a href={`mailto:${l.email}`} className="hover:text-vw-accent">{l.email}</a></div>}
-                  {l.phone && <div className="text-vw-muted">{l.phone}</div>}
+                  {l.phone && <div><a href={`tel:${l.phone.replace(/[^+\d]/g, "")}`} className="text-vw-muted hover:text-vw-accent">{l.phone}</a></div>}
                 </td>
                 <td className="px-4 py-3 text-xs">
                   {l.instagram && <a href={l.instagram} target="_blank" rel="noreferrer" className="block text-pink-400 hover:underline">Instagram</a>}
@@ -151,14 +216,39 @@ export default function Home() {
                   </select>
                 </td>
                 <td className="px-4 py-3">
+                  <button onClick={() => toggleExpand(l.id)}
+                    className={`rounded-md px-2.5 py-1.5 text-xs font-bold transition ${l.script ? "bg-vw-accent/20 text-vw-accent hover:bg-vw-accent/30" : "text-vw-muted hover:text-vw-text"}`}>
+                    {l.script ? (expanded.has(l.id) ? "Hide script" : "Script") : (expanded.has(l.id) ? "Hide" : "+ Script")}
+                  </button>
+                </td>
+                <td className="px-4 py-3">
                   <textarea defaultValue={l.notes} onBlur={(e) => { if (e.target.value !== l.notes) patch(l.id, { notes: e.target.value }); }}
                     rows={1} placeholder="Add a note…"
                     className="w-full resize-y rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-vw-text placeholder:text-vw-muted hover:border-vw-line focus:border-vw-accent focus:bg-vw-bg focus:outline-none" />
                 </td>
               </tr>
+              {expanded.has(l.id) && (
+                <tr className="bg-vw-bg/40">
+                  <td colSpan={6} className="px-4 pb-4">
+                    <div className="rounded-lg border border-vw-line bg-vw-bg p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wide text-vw-muted">Call / walk-in script</span>
+                        <button onClick={() => copyScript(l.id, l.script)} disabled={!l.script}
+                          className="rounded-md bg-vw-accent px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-40">
+                          {copiedId === l.id ? "Copied ✓" : "Copy"}
+                        </button>
+                      </div>
+                      <textarea defaultValue={l.script} onBlur={(e) => { if (e.target.value !== l.script) patch(l.id, { script: e.target.value }); }}
+                        rows={5} placeholder="Paste the call or walk-in script here…"
+                        className="w-full resize-y rounded-md border border-vw-line bg-vw-panel px-3 py-2 text-sm leading-relaxed text-vw-text placeholder:text-vw-muted focus:border-vw-accent focus:outline-none" />
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-vw-muted">No leads match.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-vw-muted">No leads match.</td></tr>
             )}
           </tbody>
         </table>
