@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthed } from "@/lib/auth";
+import { isAuthed, currentUser } from "@/lib/auth";
 import { listLeads, updateLead, upsertLead, getPool } from "@/lib/db";
 
 export async function GET() {
@@ -10,7 +10,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await isAuthed())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const who = await currentUser();
+  if (!who) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   let body: { id?: number; status?: string; notes?: string; script?: string };
   try {
     body = await request.json();
@@ -18,11 +19,15 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
   }
   if (!body.id) return NextResponse.json({ error: "missing id" }, { status: 400 });
-  await updateLead(body.id, {
-    ...(typeof body.status === "string" ? { status: body.status } : {}),
-    ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
-    ...(typeof body.script === "string" ? { script: body.script } : {}),
-  });
+  await updateLead(
+    body.id,
+    {
+      ...(typeof body.status === "string" ? { status: body.status } : {}),
+      ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
+      ...(typeof body.script === "string" ? { script: body.script } : {}),
+    },
+    who,
+  );
   return NextResponse.json({ ok: true });
 }
 

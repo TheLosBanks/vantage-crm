@@ -24,6 +24,7 @@ export default function Home() {
   const [dbReady, setDbReady] = useState(true);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [pw, setPw] = useState("");
+  const [name, setName] = useState("");
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -75,8 +76,12 @@ export default function Home() {
   async function login(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
-    const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) });
-    if (!r.ok) { setErr("Wrong password"); return; }
+    const r = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, password: pw }),
+    });
+    if (!r.ok) { setErr("Wrong name or password"); return; }
     setPw(""); load();
   }
 
@@ -108,9 +113,13 @@ export default function Home() {
           <div className="text-xl font-extrabold">
             <span className="bg-gradient-to-r from-vw-accent to-vw-accent2 bg-clip-text text-transparent">Vantage Works</span> CRM
           </div>
-          <p className="mt-1 text-sm text-vw-muted">Enter your password.</p>
-          <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Password"
+          <p className="mt-1 text-sm text-vw-muted">Sign in with your name and password.</p>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name"
+            autoComplete="username"
             className="mt-5 w-full rounded-lg border border-vw-line bg-vw-bg px-3.5 py-3 text-vw-text outline-none focus:border-vw-accent" />
+          <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Password"
+            autoComplete="current-password"
+            className="mt-3 w-full rounded-lg border border-vw-line bg-vw-bg px-3.5 py-3 text-vw-text outline-none focus:border-vw-accent" />
           {err && <p className="mt-2 text-sm font-semibold text-red-400">{err}</p>}
           <button className="mt-4 w-full rounded-lg bg-vw-accent px-4 py-3 font-bold text-white transition hover:opacity-90">Sign in</button>
         </form>

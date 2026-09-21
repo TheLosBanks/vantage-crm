@@ -46,6 +46,8 @@ export type Lead = {
   status: string;
   notes: string;
   script: string;
+  /** Who last changed this lead. Empty for anything touched before named logins. */
+  updated_by?: string;
 };
 
 let schemaReady = false;
@@ -72,6 +74,9 @@ export async function ensureSchema(): Promise<void> {
   `);
   // Migration for tables created before the script column existed.
   await p.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS script TEXT DEFAULT ''`);
+  // Who last touched a lead. Without this a trial cannot be judged: there is no
+  // way to tell a new hire's calls from anyone else's.
+  await p.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS updated_by TEXT DEFAULT ''`);
   // Site events (call taps, quote submits, etc.) from the client sites.
   await p.query(`
     CREATE TABLE IF NOT EXISTS site_events (
@@ -138,12 +143,20 @@ export async function listLeads(): Promise<Lead[]> {
   return r.rows as Lead[];
 }
 
-export async function updateLead(id: number, fields: Partial<Pick<Lead, "status" | "notes" | "script">>): Promise<void> {
+export async function updateLead(
+  id: number,
+  fields: Partial<Pick<Lead, "status" | "notes" | "script">>,
+  by?: string,
+): Promise<void> {
   const p = getPool();
   if (!p) return;
   await ensureSchema();
   const sets: string[] = [];
   const vals: unknown[] = [];
+  if (by) {
+    vals.push(by);
+    sets.push(`updated_by = $${vals.length}`);
+  }
   if (typeof fields.status === "string") {
     vals.push(fields.status);
     sets.push(`status = $${vals.length}`);
