@@ -28,6 +28,9 @@ export default function Home() {
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  // Which business's leads to show. ClaimBoost partner leads are tagged with a
+  // "ClaimBoost:" category prefix; everything else is a Vantage Works prospect.
+  const [biz, setBiz] = useState<"All" | "Vantage Works" | "ClaimBoost">("All");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -90,19 +93,29 @@ export default function Home() {
     await fetch("/api/leads", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...fields }) });
   }
 
+  const isCB = (l: Lead) => (l.category || "").toLowerCase().startsWith("claimboost");
+  const inBiz = useMemo(
+    () => leads.filter((l) => biz === "All" || (biz === "ClaimBoost" ? isCB(l) : !isCB(l))),
+    [leads, biz],
+  );
+  const bizCount = useMemo(() => {
+    const cb = leads.filter(isCB).length;
+    return { All: leads.length, "Vantage Works": leads.length - cb, ClaimBoost: cb };
+  }, [leads]);
+
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const l of leads) c[l.status] = (c[l.status] || 0) + 1;
+    for (const l of inBiz) c[l.status] = (c[l.status] || 0) + 1;
     return c;
-  }, [leads]);
+  }, [inBiz]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return leads.filter((l) =>
+    return inBiz.filter((l) =>
       (statusFilter === "All" || l.status === statusFilter) &&
       (!term || [l.name, l.category, l.email, l.phone, l.script].some((v) => (v || "").toLowerCase().includes(term)))
     );
-  }, [leads, q, statusFilter]);
+  }, [inBiz, q, statusFilter]);
 
   if (authed === null) return <main className="grid min-h-screen place-items-center text-vw-muted">Loading…</main>;
 
@@ -135,7 +148,15 @@ export default function Home() {
             <span className="bg-gradient-to-r from-vw-accent to-vw-accent2 bg-clip-text text-transparent">Vantage Works</span>
             <span className="text-vw-text"> CRM</span>
           </h1>
-          <p className="text-sm text-vw-muted">{leads.length} leads</p>
+          <p className="text-sm text-vw-muted">{filtered.length} of {leads.length} leads</p>
+          <div className="mt-3 inline-flex rounded-lg border border-vw-line bg-vw-panel p-1">
+            {(["All", "Vantage Works", "ClaimBoost"] as const).map((b) => (
+              <button key={b} onClick={() => { setBiz(b); setStatusFilter("All"); }}
+                className={`rounded-md px-3 py-1.5 text-xs font-bold transition ${biz === b ? "bg-vw-accent text-white" : "text-vw-muted hover:text-vw-text"}`}>
+                {b} <span className="opacity-70">{bizCount[b]}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {STATUSES.map((s) => (
@@ -163,7 +184,7 @@ export default function Home() {
         <form onSubmit={addLead} className="mt-3 grid gap-3 rounded-xl border border-vw-line bg-vw-panel p-4 sm:grid-cols-2">
           <input value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="Business name *"
             className="rounded-lg border border-vw-line bg-vw-bg px-3 py-2.5 text-sm text-vw-text outline-none placeholder:text-vw-muted focus:border-vw-accent" />
-          <input value={addForm.category} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })} placeholder="Category (e.g. restaurant)"
+          <input value={addForm.category} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })} placeholder={biz === "ClaimBoost" ? "Category (e.g. ClaimBoost: Public Adjuster)" : "Category (e.g. restaurant)"}
             className="rounded-lg border border-vw-line bg-vw-bg px-3 py-2.5 text-sm text-vw-text outline-none placeholder:text-vw-muted focus:border-vw-accent" />
           <input value={addForm.phone} onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })} placeholder="Phone"
             className="rounded-lg border border-vw-line bg-vw-bg px-3 py-2.5 text-sm text-vw-text outline-none placeholder:text-vw-muted focus:border-vw-accent" />
