@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthed, currentUser } from "@/lib/auth";
-import { listLeads, updateLead, upsertLead, getPool } from "@/lib/db";
+import { listLeads, updateLead, upsertLead, fillLeadEmail, getPool } from "@/lib/db";
 
 export async function GET() {
   if (!(await isAuthed())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -12,13 +12,19 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const who = await currentUser();
   if (!who) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  let body: { id?: number; status?: string; notes?: string; script?: string };
+  let body: { id?: number; status?: string; notes?: string; script?: string; fillEmail?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
   }
   if (!body.id) return NextResponse.json({ error: "missing id" }, { status: 400 });
+  if (typeof body.fillEmail === "string") {
+    const email = body.fillEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: "bad email" }, { status: 400 });
+    const filled = await fillLeadEmail(body.id, email, who);
+    return NextResponse.json({ ok: true, filled });
+  }
   await updateLead(
     body.id,
     {

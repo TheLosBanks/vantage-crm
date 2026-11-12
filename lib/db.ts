@@ -143,6 +143,19 @@ export async function listLeads(): Promise<Lead[]> {
   return r.rows as Lead[];
 }
 
+// Fills a lead's email only when it is empty; never overwrites one already on file.
+export async function fillLeadEmail(id: number, email: string, by?: string): Promise<boolean> {
+  const p = getPool();
+  if (!p) return false;
+  await ensureSchema();
+  const r = await p.query(
+    `UPDATE leads SET email = $1, updated_by = COALESCE($3, updated_by), updated_at = now()
+     WHERE id = $2 AND COALESCE(email, '') = ''`,
+    [email, id, by ?? null],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
 export async function updateLead(
   id: number,
   fields: Partial<Pick<Lead, "status" | "notes" | "script">>,
