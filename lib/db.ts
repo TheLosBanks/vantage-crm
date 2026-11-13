@@ -156,6 +156,20 @@ export async function fillLeadEmail(id: number, email: string, by?: string): Pro
   return (r.rowCount ?? 0) > 0;
 }
 
+// Same fill-only-if-empty rule for phone and website.
+export async function fillLeadField(id: number, field: "phone" | "website", value: string, by?: string): Promise<boolean> {
+  const p = getPool();
+  if (!p) return false;
+  await ensureSchema();
+  const col = field === "phone" ? "phone" : "website";
+  const r = await p.query(
+    `UPDATE leads SET ${col} = $1, updated_by = COALESCE($3, updated_by), updated_at = now()
+     WHERE id = $2 AND COALESCE(${col}, '') = ''`,
+    [value, id, by ?? null],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
 export async function updateLead(
   id: number,
   fields: Partial<Pick<Lead, "status" | "notes" | "script">>,
